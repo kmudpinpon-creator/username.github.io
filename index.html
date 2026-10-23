@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>證照模擬考系統 - 附持久化錯題庫</title>
+  <!-- 引入 PapaParse 解析 CSV -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #1e293b;
+      --border: #e2e8f0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 680px;
+      background: var(--card);
+      padding: 24px;
+      border-radius: 14px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin: 0;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      font-size: 0.75rem;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .badge-mode { background: #dbeafe; color: #1e40af; }
+    .badge-wrong { background: #fee2e2; color: #991b1b; }
+    
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      font-size: 0.9rem;
+      color: #64748b;
+    }
+    .question {
+      font-size: 1.15rem;
+      font-weight: 600;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .options { display: flex; flex-direction: column; gap: 10px; }
+    .opt-btn {
+      padding: 14px 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #fff;
+      font-size: 1rem;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      line-height: 1.4;
+    }
+    .opt-btn:hover:not(:disabled) {
+      background: #f1f5f9;
+      border-color: var(--primary);
+    }
+    .opt-btn.correct {
+      background: #dcfce7 !important;
+      border-color: var(--success) !important;
+      color: var(--success);
+      font-weight: 600;
+    }
+    .opt-btn.wrong {
+      background: #fee2e2 !important;
+      border-color: var(--danger) !important;
+      color: var(--danger);
+    }
+    .explanation {
+      margin-top: 16px;
+      padding: 14px;
+      background: #eff6ff;
+      border-left: 4px solid var(--primary);
+      border-radius: 4px;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      display: none;
+    }
+    .controls {
+      margin-top: 24px;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    button.action-btn {
+      padding: 10px 18px;
+      border: none;
+      background: var(--primary);
+      color: #fff;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    button.action-btn:hover:not(:disabled) { background: var(--primary-hover); }
+    button.action-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+    .btn-secondary { background: #64748b !important; }
+    .btn-secondary:hover { background: #475569 !important; }
+    .btn-danger { background: #ef4444 !important; }
+    .btn-danger:hover { background: #dc2626 !important; }
+    .btn-outline { background: transparent !important; color: #64748b; border: 1px solid #cbd5e1 !important; }
+    .btn-outline:hover { background: #f1f5f9 !important; color: #1e293b; }
+
+    .center-box { text-align: center; padding: 24px 0; }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin: 20px 0;
+    }
+    .stat-item {
+      background: #f8fafc;
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .stat-number { font-size: 1.5rem; font-weight: 700; color: var(--primary); }
+    .stat-label { font-size: 0.85rem; color: #64748b; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="container" id="app">
+  <div class="center-box">題庫載入中，請稍候...</div>
+</div>
+
+<script>
+  // ⚠️ 請填入你的 Google 試算表發布的 CSV 網址
+  const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQCoigWhcpdM0zwSLJfYksdiRqnxqd-euE3doUGoWyWzK-QEtZzLYfpAbhOyTc4ZMNHgddrJOmAyaKy/pub?gid=1119027927&single=true&output=csv";
+
+  // 本地儲存 Key
+  const STORAGE_KEY = "exam_wrong_question_ids";
+
+  let allQuestions = [];       // 全部題目
+  let currentQuestions = [];   // 當前模式題庫
+  let currentIndex = 0;        // 當前題號索引
+  let score = 0;               // 當前練習答對數
+  let isAnswered = false;      // 是否已作答
+  let isWrongMode = false;     // 是否為錯題複習模式
+
+  const app = document.getElementById('app');
+
+  // ---------- 錯題庫 LocalStorage 管理 ----------
+  function getWrongQuestionIds() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function addWrongQuestion(id) {
+    if (!id) return;
+    let ids = getWrongQuestionIds();
+    if (!ids.includes(id)) {
+      ids.push(id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+    }
+  }
+
+  function removeWrongQuestion(id) {
+    let ids = getWrongQuestionIds();
+    ids = ids.filter(item => item !== id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+  }
+
+  function clearAllWrongQuestions() {
+    if (confirm("確定要清空整本錯題庫嗎？這將無法復原。")) {
+      localStorage.removeItem(STORAGE_KEY);
+      renderHomeMenu();
+    }
+  }
+
+  // ---------- 資料載入 ----------
+  function loadData() {
+    if (CSV_URL.includes("YOUR_GOOGLE_SHEET_CSV_URL_HERE")) {
+      app.innerHTML = `
+        <div class="center-box">
+          <p style="color:var(--danger); font-weight:bold;">請在代碼中填入你的 Google 試算表 CSV 網址！</p>
+        </div>`;
+      return;
+    }
+
+    Papa.parse(CSV_URL, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results) {
+        // 過濾掉可能為空的列
+        allQuestions = results.data.filter(q => q.question && q.answer);
+        renderHomeMenu();
+      },
+      error: function() {
+        app.innerHTML = `<p style="color:red; text-align:center;">題庫載入失敗，請確認試算表是否有公開發布為 CSV。</p>`;
+      }
+    });
+  }
+
+  // ---------- 首頁選單 ----------
+  function renderHomeMenu() {
+    const wrongIds = getWrongQuestionIds();
+    const wrongCount = wrongIds.length;
+
+    app.innerHTML = `
+      <div class="center-box">
+        <h1 style="margin-bottom:8px;">證照模擬考練習</h1>
+        <p style="color:#64748b; margin-top:0;">目前題庫總量：${allQuestions.length} 題</p>
+
+        <div class="stat-grid">
+          <div class="stat-item">
+            <div class="stat-number">${allQuestions.length}</div>
+            <div class="stat-label">全部題目</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number" style="color: ${wrongCount > 0 ? 'var(--danger)' : '#64748b'};">${wrongCount}</div>
+            <div class="stat-label">累積待複習錯題</div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:12px; margin-top:20px;">
+          <button class="action-btn" onclick="startPractice(false)">開始隨機刷題（全題庫）</button>
+          <button class="action-btn btn-secondary" onclick="startPractice(true)" ${wrongCount === 0 ? 'disabled' : ''}>
+            專攻錯題庫 (${wrongCount} 題)
+          </button>
+          ${wrongCount > 0 ? `<button class="action-btn btn-outline" onclick="clearAllWrongQuestions()">清空錯題紀錄</button>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  // ---------- 開始練習 ----------
+  function startPractice(wrongOnly = false) {
+    isWrongMode = wrongOnly;
+    const wrongIds = getWrongQuestionIds();
+
+    if (wrongOnly) {
+      currentQuestions = allQuestions.filter(q => wrongIds.includes(q.id));
+      if (currentQuestions.length === 0) {
+        alert("目前沒有任何錯題紀錄！");
+        renderHomeMenu();
+        return;
+      }
+    } else {
+      currentQuestions = [...allQuestions];
+    }
+
+    // 題目隨機洗牌
+    currentQuestions.sort(() => Math.random() - 0.5);
+    currentIndex = 0;
+    score = 0;
+    renderQuestion();
+  }
+
+  // ---------- 渲染單題 ----------
+  function renderQuestion() {
+    isAnswered = false;
+    const q = currentQuestions[currentIndex];
+    const wrongIds = getWrongQuestionIds();
+    const isCurrentInWrong = wrongIds.includes(q.id);
+
+    app.innerHTML = `
+      <div class="nav-bar">
+        <span class="badge ${isWrongMode ? 'badge-wrong' : 'badge-mode'}">
+          ${isWrongMode ? '🔥 錯題衝刺模式' : '📝 全真隨機模式'}
+        </span>
+        <button class="action-btn btn-outline" style="padding:4px 10px; font-size:0.8rem;" onclick="renderHomeMenu()">返回首頁</button>
+      </div>
+
+      <div class="status-bar">
+        <span>第 ${currentIndex + 1} / ${currentQuestions.length} 題 ${isCurrentInWrong ? '<span style="color:var(--danger); font-size:0.8rem;">[錯題庫中]</span>' : ''}</span>
+        <span>本次得分：${score}</span>
+      </div>
+
+      <div class="question">${q.question}</div>
+
+      <div class="options">
+        <button class="opt-btn" onclick="checkAnswer('A', this)">A. ${q.optionA}</button>
+        <button class="opt-btn" onclick="checkAnswer('B', this)">B. ${q.optionB}</button>
+        <button class="opt-btn" onclick="checkAnswer('C', this)">C. ${q.optionC}</button>
+        <button class="opt-btn" onclick="checkAnswer('D', this)">D. ${q.optionD}</button>
+      </div>
+
+      <div id="explanation" class="explanation"></div>
+
+      <div class="controls">
+        <button id="nextBtn" class="action-btn" onclick="nextQuestion()" disabled>下一題</button>
+      </div>
+    `;
+  }
+
+  // ---------- 作答與自動更新錯題庫 ----------
+  function checkAnswer(selected, btn) {
+    if (isAnswered) return;
+    isAnswered = true;
+
+    const q = currentQuestions[currentIndex];
+    const correct = (q.answer || '').trim().toUpperCase();
+    const buttons = document.querySelectorAll('.opt-btn');
+
+    // 標註所有按鈕狀態
+    buttons.forEach((b) => {
+      b.disabled = true;
+      if (b.innerText.trim().startsWith(correct + ".")) {
+        b.classList.add('correct');
+      }
+    });
+
+    let extraNote = "";
+    if (selected === correct) {
+      score++;
+      if (isWrongMode) {
+        // 在錯題模式答對：自動將其移出錯題庫！
+        removeWrongQuestion(q.id);
+        extraNote = `<br><span style="color:var(--success); font-weight:600;">✨ 太棒了！本題已從錯題庫中移除！</span>`;
+      }
+    } else {
+      btn.classList.add('wrong');
+      // 答錯：自動存進 LocalStorage 錯題庫
+      addWrongQuestion(q.id);
+      extraNote = `<br><span style="color:var(--danger); font-weight:600;">📌 已記錄至錯題庫，下次可加強複習。</span>`;
+    }
+
+    // 顯示詳解
+    const expDiv = document.getElementById('explanation');
+    expDiv.style.display = 'block';
+    expDiv.innerHTML = `<strong>【正確答案】${correct}</strong><br>${q.explanation || '暫無解析'}${extraNote}`;
+
+    document.getElementById('nextBtn').disabled = false;
+  }
+
+  // ---------- 下一題或結算 ----------
+  function nextQuestion() {
+    currentIndex++;
+    if (currentIndex < currentQuestions.length) {
+      renderQuestion();
+    } else {
+      showSummary();
+    }
+  }
+
+  // ---------- 測驗總結畫面 ----------
+  function showSummary() {
+    const total = currentQuestions.length;
+    const rate = Math.round((score / total) * 100);
+    const remainingWrongs = getWrongQuestionIds().length;
+
+    app.innerHTML = `
+      <div class="center-box">
+        <h2>🎉 本次測驗結束！</h2>
+        
+        <div class="stat-grid">
+          <div class="stat-item">
+            <div class="stat-number">${score} / ${total}</div>
+            <div class="stat-label">本次得分 (${rate}%)</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number" style="color:var(--danger);">${remainingWrongs}</div>
+            <div class="stat-label">錯題庫剩餘題數</div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:10px; margin-top:24px;">
+          ${remainingWrongs > 0 ? `<button class="action-btn" onclick="startPractice(true)">繼續專攻錯題 (${remainingWrongs} 題)</button>` : '<p style="color:var(--success); font-weight:bold;">恭喜！錯題庫已完全清空！👏</p>'}
+          <button class="action-btn btn-secondary" onclick="startPractice(false)">再做一次全部題目</button>
+          <button class="action-btn btn-outline" onclick="renderHomeMenu()">回首頁選單</button>
+        </div>
+      </div>
+    `;
+  }
+
+  loadData();
+</script>
+</body>
+</html>
