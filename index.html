@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本機題庫模擬考系統</title>
+    <style>
+        :root {
+            --primary-color: #4a90e2;
+            --success-color: #2ec4b6;
+            --danger-color: #e71d36;
+            --background-color: #f7f9fc;
+            --card-color: #ffffff;
+            --text-color: #333333;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            background: var(--card-color);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+
+        .controls-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .file-upload-zone {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background-color: #f0f4f8;
+            padding: 10px 15px;
+            border-radius: 6px;
+            border: 1px dashed var(--primary-color);
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .file-upload-zone input[type="file"] {
+            font-size: 14px;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button.toggle-btn {
+            background-color: #6c757d;
+        }
+
+        button.toggle-btn.active {
+            background-color: var(--danger-color);
+        }
+
+        .card {
+            background: var(--card-color);
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+
+        .question-text {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .options-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .option-label {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 16px;
+        }
+
+        .option-label:hover {
+            background-color: #f0f4f8;
+            border-color: var(--primary-color);
+        }
+
+        .option-label input {
+            margin-right: 12px;
+            transform: scale(1.2);
+        }
+
+        /* 答題回饋樣式 */
+        .option-label.correct {
+            background-color: #d4edda !important;
+            border-color: var(--success-color) !important;
+            color: #155724;
+        }
+
+        .option-label.wrong {
+            background-color: #f8d7da !important;
+            border-color: var(--danger-color) !important;
+            color: #721c24;
+        }
+
+        .action-zone {
+            margin-top: 25px;
+            display: flex;
+            gap: 15px;
+        }
+
+        .result-panel {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 6px;
+            background-color: #e2f0fd;
+            border-left: 5px solid var(--primary-color);
+        }
+
+        .result-panel.correct-panel {
+            background-color: #e8f5e9;
+            border-left-color: var(--success-color);
+        }
+
+        .result-panel.wrong-panel {
+            background-color: #ffebee;
+            border-left-color: var(--danger-color);
+        }
+
+        .explain-text {
+            margin-top: 10px;
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+
+        .status-text {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>證照模擬考系統 (本機專用版)</h1>
+    </header>
+
+    <!-- 控制與檔案上傳區 -->
+    <div class="controls">
+        <div class="file-upload-zone">
+            <strong>選擇題庫 CSV 檔案：</strong>
+            <input type="file" id="csv-file-input" accept=".csv" />
+        </div>
+        
+        <div class="controls-row">
+            <div class="status-text">
+                <span id="pool-info">請先選擇並載入您的題庫 CSV 檔案。</span><br>
+                答對：<span id="correct-count">0</span> | 
+                答錯：<span id="wrong-count">0</span>
+            </div>
+            <div>
+                <button id="mode-toggle" class="toggle-btn" disabled>只練習錯題 (0)</button>
+                <button id="reset-wrong-btn" class="toggle-btn" style="background-color: #dc3545; font-size:12px; padding: 5px 10px; margin-left:5px;">清空錯題紀錄</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 題目主圖卡 -->
+    <div id="quiz-card" class="card hidden">
+        <div id="question-num" style="color: var(--primary-color); font-weight: bold; margin-bottom: 5px;"></div>
+        <div id="question-text" class="question-text">題目載入中...</div>
+        
+        <form id="quiz-form">
+            <div class="options-container" id="options-container">
+                <!-- 選項由 JS 動態產生 -->
+            </div>
+            
+            <div class="action-zone">
+                <button type="submit" id="submit-btn">送出答案</button>
+                <button type="button" id="next-btn" class="hidden">下一題</button>
+            </div>
+        </form>
+
+        <!-- 解析與結果回饋區 -->
+        <div id="feedback-panel" class="result-panel hidden">
+            <h3 id="feedback-title"></h3>
+            <p><strong>正確答案：</strong><span id="correct-answer-display"></span></p>
+            <div class="explain-text"><strong>解析：</strong><br><span id="explain-display"></span></div>
+        </div>
+    </div>
+
+    <!-- 提示與狀態圖卡 -->
+    <div id="msg-card" class="card" style="text-align: center;">
+        <p id="msg-text">💡 安全提示：本網頁完全不會將檔案上傳到網路。請點擊上方「選擇題庫 CSV 檔案」開始練習！</p>
+    </div>
+</div>
+
+<script>
+    // 狀態變數
+    let allQuestions = [];      // 所有的完整題庫
+    let currentPool = [];       // 當前抽題池（全考或僅錯題）
+    let wrongQuestionIds = [];  // 錯題的 ID 陣列
+    let currentQuestion = null; // 當前正在作答的題目
+    let hasSubmitted = false;   // 當前題目是否已送出答案
+    
+    // 計分統計
+    let sessionCorrect = 0;
+    let sessionWrong = 0;
+
+    // DOM 元素
+    const fileInput = document.getElementById('csv-file-input');
+    const poolInfo = document.getElementById('pool-info');
+    const correctCountEl = document.getElementById('correct-count');
+    const wrongCountEl = document.getElementById('wrong-count');
+    const modeToggleBtn = document.getElementById('mode-toggle');
+    const resetWrongBtn = document.getElementById('reset-wrong-btn');
+    const quizCard = document.getElementById('quiz-card');
+    const msgCard = document.getElementById('msg-card');
+    const msgText = document.getElementById('msg-text');
+    const questionNumEl = document.getElementById('question-num');
+    const questionTextEl = document.getElementById('question-text');
+    const optionsContainer = document.getElementById('options-container');
+    const quizForm = document.getElementById('quiz-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const feedbackPanel = document.getElementById('feedback-panel');
+    const feedbackTitle = document.getElementById('feedback-title');
+    const correctAnswerDisplay = document.getElementById('correct-answer-display');
+    const explainDisplay = document.getElementById('explain-display');
+
+    // 模式設定：'all' = 全部隨機, 'wrong' = 只練錯題
+    let practiceMode = 'all'; 
+
+    // 初始化：從 LocalStorage 讀取歷史錯題
+    if (localStorage.getItem('local_wrong_questions')) {
+        try {
+            wrongQuestionIds = JSON.parse(localStorage.getItem('local_wrong_questions'));
+        } catch(e) {
+            wrongQuestionIds = [];
+        }
+    }
+    updateWrongButtonText();
+
+    // 監聽檔案上傳
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const csvText = evt.target.result;
+            allQuestions = parseCSV(csvText);
+            
+            if(allQuestions.length === 0) {
+                showMsg("<span style='color:var(--danger-color);'>讀取失敗！請確認 CSV 檔案格式是否正確，且包含 id, question, answer 等必填欄位標頭。</span>");
+                modeToggleBtn.disabled = true;
+                return;
+            }
+            
+            // 啟用模式切換按鈕並開始練習
+            modeToggleBtn.disabled = false;
+            initPractice();
+        };
+        reader.readAsText(file, 'UTF-8');
+    });
+
+    // 專用 CSV 解析器
+    function parseCSV(text) {
+        const lines = [];
+        let row = [""];
+        let inQuotes = false;
+
+        for (let i = 0; i < text.length; i++) {
+            let c = text[i];
+            let next = text[i+1];
+            if (c === '"') {
+                if (inQuotes && next === '"') { row[row.length - 1] += '"'; i++; }
+                else { inQuotes = !inQuotes; }
+} else if (c === ',' && !inQuotes) {
+row.push('');
+} else if ((c === '\r' || c === '\n') && !inQuotes) {
+if (c === '\r' && next === '\n') { i++; }
+lines.push(row);
+row = [''];
+} else {
+row[row.length - 1] += c;
+}
+}
+if (row.length > 1 || row !== '') lines.push(row);
+if (lines.length < 2) return [];
+// 提取標頭並清理空白、轉換小寫
+const headers = lines[0].map(h => h.trim().toLowerCase());
+const result = [];
+for (let i = 1; i < lines.length; i++) {
+if (lines[i].length < headers.length) continue;
+const obj = {};
+headers.forEach((header, index) => {
+obj[header] = lines[i][index] ? lines[i][index].trim() : "";
+});
+// 相容欄位大小寫對應
+const finalId = obj.id;
+const finalQuestion = obj.question;
+const finalAnswer = obj.answer;
+if (finalId && finalQuestion && finalAnswer) {
+result.push({
+id: finalId,
+question: finalQuestion,
+optionA: obj.optiona || obj.optionA || "",
+optionB: obj.optionb || obj.optionB || "",
+optionC: obj.optionc || obj.optionC || "",
+optionD: obj.optiond || obj.optionD || "",
+answer: finalAnswer,
+explain: obj.explain || obj.explanation || ""
+});
+}
+}
+return result;
+}
+// 初始化測驗池
+function initPractice() {
+msgCard.classList.add('hidden');
+quizCard.classList.remove('hidden');
+if (practiceMode === 'wrong') {
+currentPool = allQuestions.filter(q => wrongQuestionIds.includes(q.id));
+poolInfo.innerHTML = 模式：<strong>只練錯題</strong> (此題庫中包含 ${currentPool.length} 題錯題);
+if (currentPool.length === 0) {
+alert("目前此題庫中沒有錯題紀錄喔！已自動切換回全部題庫模式。");
+switchMode('all');
+return;
+}
+} else {
+currentPool = [...allQuestions];
+poolInfo.innerHTML = 模式：<strong>全部隨機</strong> (共 ${currentPool.length} 題);
+}
+drawNextQuestion();
+}
+// 隨機抽取一題
+function drawNextQuestion() {
+hasSubmitted = false;
+feedbackPanel.classList.add('hidden');
+nextBtn.classList.add('hidden');
+submitBtn.classList.remove('hidden');
+const randomIndex = Math.floor(Math.random() * currentPool.length);
+currentQuestion = currentPool[randomIndex];
+questionNumEl.textContent = 題目編號：#${currentQuestion.id};
+questionTextEl.textContent = currentQuestion.question;
+// 渲染選項
+optionsContainer.innerHTML = '';
+const options = [
+{ key: 'A', text: currentQuestion.optionA },
+{ key: 'B', text: currentQuestion.optionB },
+{ key: 'C', text: currentQuestion.optionC },
+{ key: 'D', text: currentQuestion.optionD }
+];
+options.forEach(opt => {
+if(!opt.text) return;
+const label = document.createElement('label');
+label.className = 'option-label';
+label.id = label-${opt.key};
+const radio = document.createElement('input');
+radio.type = 'radio';
+radio.name = 'quiz-option';
+radio.value = opt.key;
+radio.required = true;
+label.appendChild(radio);
+label.appendChild(document.createTextNode( (${opt.key}) ${opt.text}));
+optionsContainer.appendChild(label);
+});
+}
+// 送出答案邏輯
+quizForm.addEventListener('submit', function(e) {
+e.preventDefault();
+if (hasSubmitted) return;
+const selectedOption = quizForm.elements['quiz-option'].value;
+const correctAnswer = currentQuestion.answer.toUpperCase().trim();
+hasSubmitted = true;
+const radios = quizForm.querySelectorAll('input[name="quiz-option"]');
+radios.forEach(r => r.disabled = true);
+feedbackPanel.classList.remove('hidden', 'correct-panel', 'wrong-panel');
+correctAnswerDisplay.textContent = correctAnswer;
+explainDisplay.textContent = currentQuestion.explain || "無解析提供。";
+if (selectedOption === correctAnswer) {
+sessionCorrect++;
+correctCountEl.textContent = sessionCorrect;
+feedbackTitle.textContent = "🎯 答對了！";
+feedbackPanel.classList.add('correct-panel');
+document.getElementById(label-${selectedOption}).classList.add('correct');
+} else {
+sessionWrong++;
+wrongCountEl.textContent = sessionWrong;
+feedbackTitle.textContent = "❌ 答錯了！";
+feedbackPanel.classList.add('wrong-panel');
+document.getElementById(label-${selectedOption}).classList.add('wrong');
+document.getElementById(label-${correctAnswer}).classList.add('correct');
+// 儲存錯題 ID
+if (!wrongQuestionIds.includes(currentQuestion.id)) {
+wrongQuestionIds.push(currentQuestion.id);
+localStorage.setItem('local_wrong_questions', JSON.stringify(wrongQuestionIds));
+updateWrongButtonText();
+}
+}
+submitBtn.classList.add('hidden');
+nextBtn.classList.remove('hidden');
+});
+// 下一題
+nextBtn.addEventListener('click', function() {
+if(practiceMode === 'wrong') {
+currentPool = allQuestions.filter(q => wrongQuestionIds.includes(q.id));
+if (currentPool.length === 0) {
+alert("太棒了！您已經清空了此題庫的所有錯題。");
+switchMode('all');
+return;
+}
+}
+drawNextQuestion();
+});
+// 切換模式
+modeToggleBtn.addEventListener('click', function() {
+if (practiceMode === 'all') {
+switchMode('wrong');
+} else {
+switchMode('all');
+}
+});
+function switchMode(mode) {
+practiceMode = mode;
+if (mode === 'wrong') {
+modeToggleBtn.classList.add('active');
+modeToggleBtn.textContent = 正在練錯題 (${wrongQuestionIds.length});
+} else {
+modeToggleBtn.classList.remove('active');
+updateWrongButtonText();
+}
+if(allQuestions.length > 0) {
+initPractice();
+}
+}
