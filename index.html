@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>證照模擬考練習系統</title>
+  <!-- 引入 PapaParse 解析 CSV -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #1e293b;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 650px;
+      background: var(--card);
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    h1 { font-size: 1.4rem; text-align: center; margin-top: 0; }
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      font-size: 0.9rem;
+      color: #64748b;
+    }
+    .question {
+      font-size: 1.15rem;
+      font-weight: 600;
+      line-height: 1.5;
+      margin-bottom: 20px;
+    }
+    .options { display: flex; flex-direction: column; gap: 10px; }
+    .opt-btn {
+      padding: 12px 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #fff;
+      font-size: 1rem;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .opt-btn:hover:not(:disabled) { background: #f1f5f9; border-color: var(--primary); }
+    .opt-btn.correct { background: #dcfce7; border-color: var(--success); color: var(--success); font-weight: bold; }
+    .opt-btn.wrong { background: #fee2e2; border-color: var(--danger); color: var(--danger); }
+    .explanation {
+      margin-top: 16px;
+      padding: 12px;
+      background: #eff6ff;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      display: none;
+    }
+    .controls {
+      margin-top: 20px;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    button.action-btn {
+      padding: 10px 18px;
+      border: none;
+      background: var(--primary);
+      color: #fff;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    button.action-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+    .btn-secondary { background: #64748b !important; }
+    .center-box { text-align: center; padding: 20px 0; }
+  </style>
+</head>
+<body>
+
+<div class="container" id="app">
+  <div id="loading" class="center-box">題庫讀取中，請稍候...</div>
+</div>
+
+<script>
+  // ⚠️ 請替換為你在第一步產生的 Google 試算表 CSV 網址
+  const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQCoigWhcpdM0zwSLJfYksdiRqnxqd-euE3doUGoWyWzK-QEtZzLYfpAbhOyTc4ZMNHgddrJOmAyaKy/pub?gid=1119027927&single=true&output=csv";
+
+  let allQuestions = [];
+  let currentQuestions = [];
+  let currentIndex = 0;
+  let score = 0;
+  let wrongQuestions = [];
+  let isAnswered = false;
+
+  const app = document.getElementById('app');
+
+  // 1. 初始化讀取題庫
+  function loadData() {
+    if (CSV_URL.includes("YOUR_GOOGLE_SHEET_CSV_URL_HERE")) {
+      app.innerHTML = `<p style="color:red; text-align:center;">請在程式碼中替換 CSV_URL 為你的 Google 試算表 CSV 網址！</p>`;
+      return;
+    }
+    Papa.parse(CSV_URL, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results) {
+        allQuestions = results.data;
+        startPractice(allQuestions);
+      },
+      error: function() {
+        app.innerHTML = `<p style="color:red;">題庫載入失敗，請確認試算表是否有「發布至網路」並允許公開檢視。</p>`;
+      }
+    });
+  }
+
+  // 2. 開始練習（隨機洗牌）
+  function startPractice(questions) {
+    currentQuestions = [...questions].sort(() => Math.random() - 0.5);
+    currentIndex = 0;
+    score = 0;
+    wrongQuestions = [];
+    renderQuestion();
+  }
+
+  // 3. 渲染單一題目
+  function renderQuestion() {
+    isAnswered = false;
+    const q = currentQuestions[currentIndex];
+    
+    app.innerHTML = `
+      <div class="status-bar">
+        <span>第 ${currentIndex + 1} / ${currentQuestions.length} 題</span>
+        <span>目前得分：${score}</span>
+      </div>
+      <div class="question">${q.question}</div>
+      <div class="options">
+        <button class="opt-btn" onclick="checkAnswer('A', this)">A. ${q.optionA}</button>
+        <button class="opt-btn" onclick="checkAnswer('B', this)">B. ${q.optionB}</button>
+        <button class="opt-btn" onclick="checkAnswer('C', this)">C. ${q.optionC}</button>
+        <button class="opt-btn" onclick="checkAnswer('D', this)">D. ${q.optionD}</button>
+      </div>
+      <div id="explanation" class="explanation"></div>
+      <div class="controls">
+        <button id="nextBtn" class="action-btn" onclick="nextQuestion()" disabled>下一題</button>
+      </div>
+    `;
+  }
+
+  // 4. 作答與即時批改
+  function checkAnswer(selected, btn) {
+    if (isAnswered) return;
+    isAnswered = true;
+
+    const q = currentQuestions[currentIndex];
+    const correct = q.answer.trim().toUpperCase();
+    const buttons = document.querySelectorAll('.opt-btn');
+
+    buttons.forEach((b) => {
+      b.disabled = true;
+      if (b.innerText.startsWith(correct + ".")) {
+        b.classList.add('correct');
+      }
+    });
+
+    if (selected === correct) {
+      score++;
+    } else {
+      btn.classList.add('wrong');
+      wrongQuestions.push(q);
+    }
+
+    // 顯示詳解
+    const expDiv = document.getElementById('explanation');
+    expDiv.style.display = 'block';
+    expDiv.innerHTML = `<strong>【答案】${correct}</strong><br>${q.explanation || '暫無解析'}`;
+
+    document.getElementById('nextBtn').disabled = false;
+  }
+
+  // 5. 下一題或進入結算
+  function nextQuestion() {
+    currentIndex++;
+    if (currentIndex < currentQuestions.length) {
+      renderQuestion();
+    } else {
+      showSummary();
+    }
+  }
+
+  // 6. 結算畫面
+  function showSummary() {
+    const total = currentQuestions.length;
+    const rate = Math.round((score / total) * 100);
+
+    let html = `
+      <div class="center-box">
+        <h2>練習完成！</h2>
+        <p style="font-size: 1.3rem;">得分：<strong>${score} / ${total}</strong> (${rate}%)</p>
+        <p>答錯題數：${wrongQuestions.length} 題</p>
+        <div style="margin-top: 24px; display: flex; gap: 12px; justify-content: center;">
+          <button class="action-btn" onclick="startPractice(allQuestions)">全部重測</button>
+    `;
+
+    if (wrongQuestions.length > 0) {
+      html += `<button class="action-btn btn-secondary" onclick="startPractice(wrongQuestions)">只練錯題 (${wrongQuestions.length})</button>`;
+    }
+
+    html += `</div></div>`;
+    app.innerHTML = html;
+  }
+
+  loadData();
+</script>
+</body>
+</html>
